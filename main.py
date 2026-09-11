@@ -1,32 +1,118 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 import plotly.express as px
+import plotly.graph_objects as go
 
 
 # ============================================================
-# 1. НАСТРОЙКА СТРАНИЦЫ
+# 1. PAGE CONFIG
 # ============================================================
 
 st.set_page_config(
-    page_title="Shanghai Climate 2000-2025",
+    page_title="Shanghai Climate Observatory",
     page_icon="🌏",
-    layout="wide"
-)
-
-st.title("🌏 상하이 기후 데이터 그래프")
-
-st.subheader(
-    "Shanghai Climate Change — 2000–2025"
-)
-
-st.write(
-    "2000년부터 2025년까지 중국 상하이의 "
-    "기온과 강수량 변화를 데이터로 분석합니다."
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
 
 # ============================================================
-# 2. METEOSTAT ДАННЫЕ
+# 2. MODERN CSS
+# ============================================================
+
+st.markdown(
+    """
+    <style>
+        .stApp {
+            background: #f5f7fb;
+        }
+
+        .block-container {
+            padding-top: 1.2rem;
+            padding-bottom: 3rem;
+            max-width: 1500px;
+        }
+
+        .hero {
+            padding: 1.5rem 1.7rem;
+            border-radius: 22px;
+            background:
+                linear-gradient(135deg, rgba(255,255,255,.98), rgba(237,243,250,.96));
+            border: 1px solid rgba(80,100,130,.12);
+            box-shadow: 0 10px 35px rgba(40,60,90,.08);
+            margin-bottom: 1rem;
+        }
+
+        .hero-title {
+            font-size: 2.35rem;
+            font-weight: 800;
+            letter-spacing: -0.04em;
+            margin-bottom: .2rem;
+        }
+
+        .hero-subtitle {
+            color: #596579;
+            font-size: 1.03rem;
+        }
+
+        .section-title {
+            font-size: 1.45rem;
+            font-weight: 750;
+            margin-top: 1.3rem;
+            margin-bottom: .45rem;
+        }
+
+        .small-muted {
+            color: #68758a;
+            font-size: .9rem;
+        }
+
+        div[data-testid="stMetric"] {
+            background: white;
+            border: 1px solid rgba(80,100,130,.12);
+            padding: .8rem;
+            border-radius: 16px;
+            box-shadow: 0 6px 20px rgba(40,60,90,.05);
+        }
+
+        .source-box {
+            background: white;
+            border-left: 5px solid #4c78a8;
+            padding: .9rem 1rem;
+            border-radius: 10px;
+            color: #536174;
+        }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+
+# ============================================================
+# 3. HEADER
+# ============================================================
+
+st.markdown(
+    """
+    <div class="hero">
+        <div class="hero-title">🌏 Shanghai Climate Observatory</div>
+        <div class="hero-subtitle">
+            Интерактивное исследование климата Шанхая и его динамики
+            за 2000–2025 годы
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
+
+st.caption(
+    "Shanghai • Climate • Temperature • Precipitation • Trends • Map"
+)
+
+
+# ============================================================
+# 4. DATA SOURCE
 # ============================================================
 
 DATA_URL = (
@@ -36,491 +122,655 @@ DATA_URL = (
 
 @st.cache_data
 def load_data():
+    df = pd.read_csv(DATA_URL)
 
-    df = pd.read_csv(
-        DATA_URL,
-        compression="gzip"
-    )
+    # Оставляем реальные поля месячного набора Meteostat
+    needed = [
+        "year",
+        "month",
+        "temp",
+        "tmin",
+        "tmax",
+        "prcp"
+    ]
 
-    return df
+    missing = [c for c in needed if c not in df.columns]
 
+    if missing:
+        raise ValueError(
+            "В файле отсутствуют ожидаемые колонки: "
+            + ", ".join(missing)
+        )
 
-# ============================================================
-# 3. ЗАГРУЗКА
-# ============================================================
+    for c in needed:
+        df[c] = pd.to_numeric(df[c], errors="coerce")
 
-try:
+    df = df[
+        (df["year"] >= 2000) &
+        (df["year"] <= 2025)
+    ].copy()
 
-    df = load_data()
-
-except Exception as e:
-
-    st.error(
-        "기후 데이터를 불러오지 못했습니다."
-    )
-
-    st.write(
-        "Meteostat 데이터 연결에 문제가 발생했습니다."
-    )
-
-    st.code(str(e))
-
-    st.stop()
-
-
-# ============================================================
-# 4. ПРОВЕРКА НУЖНЫХ КОЛОНОК
-# ============================================================
-
-required_columns = [
-    "year",
-    "month",
-    "temp",
-    "tmin",
-    "tmax",
-    "prcp"
-]
-
-
-missing_columns = [
-    column
-    for column in required_columns
-    if column not in df.columns
-]
-
-
-if missing_columns:
-
-    st.error(
-        "필요한 데이터 열을 찾을 수 없습니다."
-    )
-
-    st.write(
-        "찾을 수 없는 열:",
-        missing_columns
-    )
-
-    st.write(
-        "현재 데이터 열:",
-        list(df.columns)
-    )
-
-    st.stop()
-
-
-# ============================================================
-# 5. ПРЕОБРАЗОВАНИЕ ДАННЫХ
-# ============================================================
-
-df["year"] = pd.to_numeric(
-    df["year"],
-    errors="coerce"
-)
-
-df["month"] = pd.to_numeric(
-    df["month"],
-    errors="coerce"
-)
-
-
-for column in [
-    "temp",
-    "tmin",
-    "tmax",
-    "prcp"
-]:
-
-    df[column] = pd.to_numeric(
-        df[column],
+    df["date"] = pd.to_datetime(
+        dict(
+            year=df["year"].astype(int),
+            month=df["month"].astype(int),
+            day=1
+        ),
         errors="coerce"
     )
 
+    df["year"] = df["year"].astype(int)
+    df["month"] = df["month"].astype(int)
 
-# ============================================================
-# 6. ОСТАВЛЯЕМ 2000–2025
-# ============================================================
+    return df.sort_values("date")
 
-df = df[
-    (df["year"] >= 2000) &
-    (df["year"] <= 2025)
-].copy()
+
+try:
+    df = load_data()
+except Exception as e:
+    st.error("Не удалось загрузить климатические данные.")
+    st.code(str(e))
+    st.stop()
 
 
 if df.empty:
-
-    st.error(
-        "2000–2025년 데이터가 없습니다."
-    )
-
+    st.error("Нет данных за 2000–2025 годы.")
     st.stop()
 
 
 # ============================================================
-# 7. ГОДОВОЙ АНАЛИЗ
+# 5. SIDEBAR CONTROLS
+# ============================================================
+
+st.sidebar.header("⚙️ Управление")
+
+metric_choice = st.sidebar.selectbox(
+    "Главный показатель",
+    [
+        "Средняя температура",
+        "Средняя минимальная температура",
+        "Средняя максимальная температура",
+        "Осадки"
+    ]
+)
+
+year_range = st.sidebar.slider(
+    "Период анализа",
+    min_value=2000,
+    max_value=2025,
+    value=(2000, 2025)
+)
+
+selected_years = df[
+    (df["year"] >= year_range[0]) &
+    (df["year"] <= year_range[1])
+].copy()
+
+show_monthly = st.sidebar.checkbox(
+    "Показывать месячный профиль",
+    value=True
+)
+
+show_map = st.sidebar.checkbox(
+    "Показывать карту",
+    value=True
+)
+
+
+# ============================================================
+# 6. ANNUAL AGGREGATION
 # ============================================================
 
 annual = (
-    df.groupby("year")
+    selected_years
+    .groupby("year")
     .agg(
-        평균기온=("temp", "mean"),
-        평균최저기온=("tmin", "mean"),
-        평균최고기온=("tmax", "mean"),
-        강수량=("prcp", "sum")
+        avg_temp=("temp", "mean"),
+        avg_tmin=("tmin", "mean"),
+        avg_tmax=("tmax", "mean"),
+        precipitation=("prcp", "sum")
     )
     .reset_index()
 )
 
-
-annual = annual.sort_values(
-    "year"
+annual["temperature_range"] = (
+    annual["avg_tmax"] - annual["avg_tmin"]
 )
 
 
 # ============================================================
-# 8. ОСНОВНОЙ ГРАФИК — СРЕДНЯЯ ТЕМПЕРАТУРА
+# 7. KPI DASHBOARD
 # ============================================================
 
-st.divider()
+latest_year = int(annual["year"].max())
+first_year = int(annual["year"].min())
 
-st.header(
-    "📈 그래프 1 — 상하이 평균기온 변화"
+latest = annual.iloc[-1]
+
+warming = np.nan
+if len(annual) >= 2:
+    warming = (
+        annual.iloc[-1]["avg_temp"]
+        - annual.iloc[0]["avg_temp"]
+    )
+
+trend_per_decade = np.nan
+if len(annual) >= 2:
+    x = annual["year"].to_numpy()
+    y = annual["avg_temp"].to_numpy()
+
+    slope = np.polyfit(x, y, 1)[0]
+    trend_per_decade = slope * 10
+
+
+st.markdown(
+    '<div class="section-title">📊 Climate dashboard</div>',
+    unsafe_allow_html=True
 )
 
-st.write(
-    "2000년부터 2025년까지 상하이의 "
-    "연평균 기온 변화를 보여줍니다."
+c1, c2, c3, c4 = st.columns(4)
+
+with c1:
+    st.metric(
+        "Средняя температура",
+        f"{latest['avg_temp']:.1f} °C"
+    )
+
+with c2:
+    st.metric(
+        "Осадки",
+        f"{latest['precipitation']:,.0f} mm"
+    )
+
+with c3:
+    if pd.notna(trend_per_decade):
+        st.metric(
+            "Тренд температуры",
+            f"{trend_per_decade:+.2f} °C / 10 лет"
+        )
+    else:
+        st.metric("Тренд температуры", "—")
+
+with c4:
+    st.metric(
+        "Амплитуда",
+        f"{latest['temperature_range']:.1f} °C"
+    )
+
+
+st.caption(
+    f"Текущий dashboard рассчитан для {latest_year} года "
+    f"в выбранном диапазоне {first_year}–{latest_year}."
 )
 
+
+# ============================================================
+# 8. GRAPH 1 — ANNUAL TEMPERATURE
+# ============================================================
+
+st.markdown(
+    '<div class="section-title">🌡️ 1. Изменение средней температуры</div>',
+    unsafe_allow_html=True
+)
 
 fig1 = px.line(
     annual,
     x="year",
-    y="평균기온",
+    y="avg_temp",
     markers=True,
-    title="Shanghai Average Temperature — 2000–2025",
     labels={
-        "year": "연도",
-        "평균기온": "평균기온 (°C)"
-    }
+        "year": "Год",
+        "avg_temp": "Средняя температура, °C"
+    },
+    title="Среднегодовая температура в Шанхае"
 )
-
 
 fig1.update_traces(
     mode="lines+markers",
     hovertemplate=(
-        "연도: %{x}<br>"
-        "평균기온: %{y:.2f} °C"
+        "Год: %{x}<br>"
+        "Средняя температура: %{y:.2f} °C"
         "<extra></extra>"
     )
 )
-
 
 fig1.update_layout(
-    height=600,
-
-    xaxis=dict(
-        title="연도",
-        dtick=2
-    ),
-
-    yaxis=dict(
-        title="평균기온 (°C)"
-    )
+    height=520,
+    hovermode="x unified",
+    margin=dict(l=20, r=20, t=60, b=20)
 )
 
+st.plotly_chart(fig1, use_container_width=True)
 
-st.plotly_chart(
-    fig1,
-    use_container_width=True
+st.info(
+    "На этом графике можно исследовать долгосрочный температурный тренд "
+    "и сравнивать начало и конец выбранного периода."
 )
 
 
 # ============================================================
-# 9. ОБЪЯСНЕНИЕ ГРАФИКА
+# 9. GRAPH 2 — MIN / MAX
 # ============================================================
 
-st.subheader(
-    "💡 이 그래프로 알 수 있는 것"
+st.markdown(
+    '<div class="section-title">📈 2. Минимальная и максимальная температура</div>',
+    unsafe_allow_html=True
 )
 
-st.text_area(
-    "직접 설명을 작성하세요.",
-    placeholder=(
-        "예: 2000년부터 2025년까지 "
-        "상하이의 평균기온은 장기적으로 "
-        "상승 또는 하락하는 경향을 보인다."
-    ),
-    height=120
-)
-
-
-# ============================================================
-# 10. ГРАФИК — МИНИМАЛЬНАЯ И МАКСИМАЛЬНАЯ
-# ============================================================
-
-st.divider()
-
-st.header(
-    "🌡️ 그래프 2 — 최저기온과 최고기온 변화"
-)
-
-st.write(
-    "연도별 평균 최저기온과 평균 최고기온을 비교합니다."
-)
-
-
-temperature_long = annual.melt(
+temp_long = annual.melt(
     id_vars="year",
-    value_vars=[
-        "평균최저기온",
-        "평균최고기온"
-    ],
-    var_name="기온종류",
-    value_name="기온"
+    value_vars=["avg_tmin", "avg_temp", "avg_tmax"],
+    var_name="type",
+    value_name="temperature"
 )
 
+temp_long["type"] = temp_long["type"].map(
+    {
+        "avg_tmin": "Средняя минимальная",
+        "avg_temp": "Средняя",
+        "avg_tmax": "Средняя максимальная"
+    }
+)
 
 fig2 = px.line(
-    temperature_long,
+    temp_long,
     x="year",
-    y="기온",
-    color="기온종류",
+    y="temperature",
+    color="type",
     markers=True,
-    title="Shanghai Minimum and Maximum Temperature",
     labels={
-        "year": "연도",
-        "기온": "기온 (°C)",
-        "기온종류": "기온 종류"
-    }
+        "year": "Год",
+        "temperature": "Температура, °C",
+        "type": "Показатель"
+    },
+    title="Температурный диапазон по годам"
 )
-
 
 fig2.update_traces(
-    mode="lines+markers"
-)
-
-
-fig2.update_layout(
-    height=600,
-
-    xaxis=dict(
-        title="연도",
-        dtick=2
-    ),
-
-    yaxis=dict(
-        title="기온 (°C)"
-    )
-)
-
-
-st.plotly_chart(
-    fig2,
-    use_container_width=True
-)
-
-
-# ============================================================
-# 11. ГРАФИК — ОСАДКИ
-# ============================================================
-
-st.divider()
-
-st.header(
-    "🌧️ 그래프 3 — 연간 강수량 변화"
-)
-
-st.write(
-    "2000년부터 2025년까지 상하이의 "
-    "연간 총 강수량 변화를 보여줍니다."
-)
-
-
-fig3 = px.line(
-    annual,
-    x="year",
-    y="강수량",
-    markers=True,
-    title="Shanghai Annual Precipitation — 2000–2025",
-    labels={
-        "year": "연도",
-        "강수량": "강수량 (mm)"
-    }
-)
-
-
-fig3.update_traces(
     mode="lines+markers",
     hovertemplate=(
-        "연도: %{x}<br>"
-        "강수량: %{y:.1f} mm"
+        "%{fullData.name}<br>"
+        "Год: %{x}<br>"
+        "Температура: %{y:.2f} °C"
         "<extra></extra>"
     )
 )
 
+fig2.update_layout(
+    height=540,
+    hovermode="x unified",
+    margin=dict(l=20, r=20, t=60, b=20)
+)
+
+st.plotly_chart(fig2, use_container_width=True)
+
+
+# ============================================================
+# 10. GRAPH 3 — PRECIPITATION
+# ============================================================
+
+st.markdown(
+    '<div class="section-title">🌧️ 3. Годовое количество осадков</div>',
+    unsafe_allow_html=True
+)
+
+fig3 = px.bar(
+    annual,
+    x="year",
+    y="precipitation",
+    labels={
+        "year": "Год",
+        "precipitation": "Осадки, mm"
+    },
+    title="Годовые осадки в Шанхае"
+)
+
+fig3.update_traces(
+    hovertemplate=(
+        "Год: %{x}<br>"
+        "Осадки: %{y:.0f} mm"
+        "<extra></extra>"
+    )
+)
 
 fig3.update_layout(
-    height=600,
-
-    xaxis=dict(
-        title="연도",
-        dtick=2
-    ),
-
-    yaxis=dict(
-        title="강수량 (mm)"
-    )
+    height=500,
+    margin=dict(l=20, r=20, t=60, b=20)
 )
 
-
-st.plotly_chart(
-    fig3,
-    use_container_width=True
-)
+st.plotly_chart(fig3, use_container_width=True)
 
 
 # ============================================================
-# 12. ОБЩИЙ АНАЛИЗ
+# 11. MONTHLY CLIMATE PROFILE
 # ============================================================
 
-st.subheader(
-    "💡 기후 변화에 대해 알 수 있는 것"
-)
+if show_monthly:
 
-st.text_area(
-    "직접 분석을 작성하세요.",
-    placeholder=(
-        "예: 2000년부터 2025년까지 "
-        "상하이의 기온과 강수량이 "
-        "어떻게 변화했는지 설명하세요."
-    ),
-    height=150
-)
+    st.markdown(
+        '<div class="section-title">🗓️ 4. Климатический профиль по месяцам</div>',
+        unsafe_allow_html=True
+    )
+
+    monthly = (
+        selected_years
+        .groupby("month")
+        .agg(
+            temp=("temp", "mean"),
+            tmin=("tmin", "mean"),
+            tmax=("tmax", "mean"),
+            prcp=("prcp", "mean")
+        )
+        .reset_index()
+    )
+
+    month_names = {
+        1: "Янв",
+        2: "Фев",
+        3: "Мар",
+        4: "Апр",
+        5: "Май",
+        6: "Июн",
+        7: "Июл",
+        8: "Авг",
+        9: "Сен",
+        10: "Окт",
+        11: "Ноя",
+        12: "Дек"
+    }
+
+    monthly["month_name"] = monthly["month"].map(month_names)
+
+    tab1, tab2 = st.tabs(
+        ["🌡️ Температура", "🌧️ Осадки"]
+    )
+
+    with tab1:
+
+        mlong = monthly.melt(
+            id_vars=["month", "month_name"],
+            value_vars=["tmin", "temp", "tmax"],
+            var_name="type",
+            value_name="value"
+        )
+
+        mlong["type"] = mlong["type"].map(
+            {
+                "tmin": "Средняя минимальная",
+                "temp": "Средняя",
+                "tmax": "Средняя максимальная"
+            }
+        )
+
+        fig4 = px.line(
+            mlong,
+            x="month_name",
+            y="value",
+            color="type",
+            markers=True,
+            category_orders={
+                "month_name": list(month_names.values())
+            },
+            labels={
+                "month_name": "Месяц",
+                "value": "Температура, °C",
+                "type": "Показатель"
+            },
+            title="Средний климатический профиль по месяцам"
+        )
+
+        fig4.update_layout(height=480)
+
+        st.plotly_chart(
+            fig4,
+            use_container_width=True
+        )
+
+    with tab2:
+
+        fig5 = px.bar(
+            monthly,
+            x="month_name",
+            y="prcp",
+            labels={
+                "month_name": "Месяц",
+                "prcp": "Средние месячные осадки, mm"
+            },
+            title="Средние месячные осадки"
+        )
+
+        fig5.update_layout(height=480)
+
+        st.plotly_chart(
+            fig5,
+            use_container_width=True
+        )
 
 
 # ============================================================
-# 13. ОСНОВНЫЕ ПОКАЗАТЕЛИ
+# 12. CLIMATE EXTREMES / STATISTICS
 # ============================================================
 
-st.divider()
-
-st.header(
-    "📊 주요 기후 지표"
+st.markdown(
+    '<div class="section-title">🔎 5. Статистический анализ</div>',
+    unsafe_allow_html=True
 )
 
+s1, s2, s3 = st.columns(3)
 
-col1, col2, col3, col4 = st.columns(4)
-
-
-with col1:
-
-    first_temp = annual.iloc[0]["평균기온"]
-
-    st.metric(
-        "2000년 평균기온",
-        f"{first_temp:.2f} °C"
-    )
-
-
-with col2:
-
-    last_temp = annual.iloc[-1]["평균기온"]
-
-    st.metric(
-        "2025년 평균기온",
-        f"{last_temp:.2f} °C"
-    )
-
-
-with col3:
-
-    temperature_change = (
-        last_temp - first_temp
-    )
-
-    st.metric(
-        "2000→2025 변화",
-        f"{temperature_change:+.2f} °C"
-    )
-
-
-with col4:
-
+with s1:
     warmest_year = annual.loc[
-        annual["평균기온"].idxmax(),
-        "year"
+        annual["avg_temp"].idxmax()
     ]
 
     st.metric(
-        "가장 따뜻한 해",
-        f"{int(warmest_year)}년"
+        "Самый тёплый год",
+        int(warmest_year["year"]),
+        f"{warmest_year['avg_temp']:.2f} °C"
+    )
+
+with s2:
+    wettest_year = annual.loc[
+        annual["precipitation"].idxmax()
+    ]
+
+    st.metric(
+        "Самый влажный год",
+        int(wettest_year["year"]),
+        f"{wettest_year['precipitation']:.0f} mm"
+    )
+
+with s3:
+    coolest_year = annual.loc[
+        annual["avg_temp"].idxmin()
+    ]
+
+    st.metric(
+        "Самый прохладный год",
+        int(coolest_year["year"]),
+        f"{coolest_year['avg_temp']:.2f} °C"
     )
 
 
 # ============================================================
-# 14. ТАБЛИЦА
+# 13. MAP OF SHANGHAI + SURROUNDINGS
 # ============================================================
 
-st.divider()
+if show_map:
 
-st.header(
-    "📋 연도별 기후 데이터"
-)
+    st.markdown(
+        '<div class="section-title">🗺️ 6. Шанхай и окружающий регион</div>',
+        unsafe_allow_html=True
+    )
 
+    st.write(
+        "Карта показывает положение Шанхая и крупных городов "
+        "дельты Янцзы. Климатические наблюдения в этом проекте "
+        "относятся к станции Shanghai / 58362."
+    )
 
-display_df = annual.copy()
+    cities = pd.DataFrame(
+        {
+            "city": [
+                "Shanghai",
+                "Suzhou",
+                "Wuxi",
+                "Nantong",
+                "Jiaxing",
+                "Hangzhou",
+                "Ningbo"
+            ],
+            "lat": [
+                31.2304,
+                31.2989,
+                31.4912,
+                31.9807,
+                30.7461,
+                30.2741,
+                29.8683
+            ],
+            "lon": [
+                121.4737,
+                120.5853,
+                120.3119,
+                120.8943,
+                120.7555,
+                120.1551,
+                121.5440
+            ],
+            "role": [
+                "Главный город / климатическая точка",
+                "Окрестности",
+                "Окрестности",
+                "Окрестности",
+                "Окрестности",
+                "Окрестности",
+                "Окрестности"
+            ]
+        }
+    )
 
+    fig_map = px.scatter_map(
+        cities,
+        lat="lat",
+        lon="lon",
+        hover_name="city",
+        hover_data={
+            "role": True,
+            "lat": False,
+            "lon": False
+        },
+        zoom=5.6,
+        center={
+            "lat": 31.0,
+            "lon": 120.9
+        },
+        height=620,
+        map_style="open-street-map",
+        size_max=18,
+        title="Shanghai and Yangtze River Delta"
+    )
 
-display_df["평균기온"] = (
-    display_df["평균기온"].round(2)
-)
+    fig_map.update_traces(
+        marker=dict(size=13)
+    )
 
-display_df["평균최저기온"] = (
-    display_df["평균최저기온"].round(2)
-)
+    fig_map.update_layout(
+        margin=dict(l=0, r=0, t=55, b=0)
+    )
 
-display_df["평균최고기온"] = (
-    display_df["평균최고기온"].round(2)
-)
-
-display_df["강수량"] = (
-    display_df["강수량"].round(1)
-)
-
-
-st.dataframe(
-    display_df,
-    use_container_width=True
-)
+    st.plotly_chart(
+        fig_map,
+        use_container_width=True
+    )
 
 
 # ============================================================
-# 15. ИСТОЧНИК
+# 14. SIMPLE TREND ANALYSIS
 # ============================================================
 
-st.divider()
-
-st.subheader(
-    "📚 데이터 출처"
+st.markdown(
+    '<div class="section-title">🧠 7. Автоматический вывод</div>',
+    unsafe_allow_html=True
 )
+
+if pd.notna(warming):
+
+    direction = "повысилась" if warming > 0 else "снизилась"
+
+    st.write(
+        f"За выбранный период средняя годовая температура "
+        f"{direction} примерно на **{abs(warming):.2f} °C** "
+        f"(сравнение первого и последнего года диапазона)."
+    )
+
+if pd.notna(trend_per_decade):
+
+    st.write(
+        f"Линейный температурный тренд составляет примерно "
+        f"**{trend_per_decade:+.2f} °C за десятилетие**."
+    )
 
 st.write(
-    "Meteostat — Shanghai weather station 58362"
-)
-
-st.write(
-    "분석 기간: 2000–2025"
-)
-
-st.write(
-    "평균기온 / 최저기온 / 최고기온 / 강수량"
+    "Важно: линейный тренд — это статистическая оценка, "
+    "а не прогноз будущего климата."
 )
 
 
 # ============================================================
-# 16. ЗАВЕРШЕНИЕ
+# 15. DATA TABLE
 # ============================================================
+
+st.markdown(
+    '<div class="section-title">📋 8. Таблица данных</div>',
+    unsafe_allow_html=True
+)
+
+with st.expander("Открыть годовые значения"):
+
+    display_annual = annual.copy()
+
+    display_annual.columns = [
+        "Год",
+        "Средняя температура °C",
+        "Средняя минимальная °C",
+        "Средняя максимальная °C",
+        "Осадки mm",
+        "Амплитуда °C"
+    ]
+
+    st.dataframe(
+        display_annual,
+        use_container_width=True,
+        hide_index=True
+    )
+
+
+with st.expander("Открыть исходные месячные данные"):
+
+    st.dataframe(
+        selected_years,
+        use_container_width=True,
+        hide_index=True
+    )
+
+
+# ============================================================
+# 16. SOURCE
+# ============================================================
+
+st.markdown(
+    """
+    <div class="source-box">
+        <b>Источник данных:</b> Meteostat monthly climate data<br>
+        <b>Станция:</b> Shanghai / 58362<br>
+        <b>Период:</b> 2000–2025<br>
+        <b>Показатели:</b> температура, минимум, максимум, осадки
+    </div>
+    """,
+    unsafe_allow_html=True
+)
 
 st.success(
-    "2000년부터 2025년까지 상하이 기후 데이터 분석 완료!"
+    "🌏 Shanghai Climate Observatory готов."
 )
